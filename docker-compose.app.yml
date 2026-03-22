@@ -1,0 +1,26 @@
+services:
+  producer:
+    build: ./app/producer
+    container_name: producer
+    networks:
+      - redecor-net
+    command: python -u app.py
+    env_file:
+      - ./app/producer/.env
+    expose:
+      - "8000"
+
+  worker:
+    build: ./app/worker
+    networks:
+      - redecor-net
+    command: python -u app.py
+    env_file:
+      - ./app/worker/.env
+    expose:
+      - "8001"
+
+networks:
+  redecor-net:
+    external: true
+    name: redecor-net

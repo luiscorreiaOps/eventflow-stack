@@ -11,7 +11,7 @@ NC := \033[0m
 
 help:
 	@echo ""
-	@echo "$(GREEN)Docker Swarm Autoscale - Comandos $(NC)"
+	@echo "$(GREEN)Docker Swarm Autoscale  $(NC)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-15s$(NC) %s\n", $$1, $$2}'

@@ -1,0 +1,20 @@
+
+
+# Swarm advertise
+swarm_advertise_addr = "127.0.0.1"
+
+prometheus_port = 9090
+grafana_port    = 3000
+kafka_ui_port   = 8080
+postgres_port   = 5432
+
+# Config
+autoscaler_min_replicas   = 1
+autoscaler_max_replicas   = 5
+autoscaler_up_threshold   = 0.9   # 90% de CPU
+autoscaler_down_threshold = 0.6   # 60% de CPU
+
+worker_cpu_limit    = "1.0"
+worker_memory_limit = "256M"
+
+api_token = "abc123"

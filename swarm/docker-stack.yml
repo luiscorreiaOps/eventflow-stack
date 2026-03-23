@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+
+  kafka:
+    image: ${KAFKA_IMAGE}
+    networks:
+    - redecor-net
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    networks:
+    - redecor-net
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+    - target: 5432
+      published: ${POSTGRES_PORT}
+      mode: host
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    networks:
+    - redecor-net
+    ports:
+    - target: 8080
+      published: ${KAFKA_UI_PORT}
+      mode: host
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    user: root
+    networks:
+    - redecor-net
+    ports:
+    - target: 9090
+      published: ${PROMETHEUS_PORT}
+      mode: host
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    configs:
+    - source: prometheus_config_v1
+      target: /etc/prometheus/prometheus.yml
+    deploy:
+      endpoint_mode: dnsrr
+
+  grafana:
+    image: ${GRAFANA_IMAGE}
+    networks:
+    - redecor-net
+    ports:
+    - target: 3000
+      published: ${GRAFANA_PORT}
+      mode: host
+    configs:
+    - source: grafana_datasource_v1
+      target: /etc/grafana/provisioning/datasources/prometheus.yml
+    - source: grafana_provider_v1
+      target: /etc/grafana/provisioning/dashboards/dashboard_provider.yml
+    - source: grafana_dashboard_v1
+      target: /etc/grafana/dashboards/main_dashboard.json
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    networks:
+    - redecor-net
+    volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:rw
+    - /sys:/sys:ro
+    - /var/lib/docker/:/var/lib/docker:ro
+    deploy:
+      mode: global
+    command:
+    - --docker_only=true
+
+  producer:
+    image: redecor-producer:latest
+    networks:
+    - redecor-net
+    command: python -u app.py
+    environment:
+      KAFKA_BROKER: ${KAFKA_BROKER}
+      METRICS_PORT: ${PRODUCER_METRICS_PORT}
+
+  worker:
+    image: redecor-worker:latest
+    networks:
+    - redecor-net
+    command: python -u app.py
+    environment:
+      KAFKA_BROKER: ${KAFKA_BROKER}
+      DB_HOST: ${DB_HOST}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      API_TOKEN: ${API_TOKEN}
+      METRICS_PORT: ${WORKER_METRICS_PORT}
+      API_TOKEN_EXPIRATION: ${API_TOKEN_EXPIRATION}
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+      labels:
+      - "com.df.autoscaler.enable=true"
+      - "com.df.autoscaler.min=1"
+      - "com.df.autoscaler.max=5"
+      - "com.df.autoscaler.up.threshold=70"
+      - "com.df.autoscaler.down.threshold=20"
+      - "com.df.autoscaler.query=sum(rate(container_cpu_usage_seconds_total{name=~\".*redecor_worker.*\"}[1m])) * 100"
+
+  autoscaler:
+    image: redecor-autoscaler:latest
+    networks:
+    - redecor-net
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      PROMETHEUS_URL: ${PROMETHEUS_URL}
+      SERVICE_NAME: redecor_worker
+      PROM_QUERY: sum(rate(container_cpu_usage_seconds_total{name=~".*redecor_worker.*"}[1m])) * 100
+      UP_THRESHOLD: 1
+      DOWN_THRESHOLD: 0.7
+      MIN_REPLICAS: 1
+      MAX_REPLICAS: 6
+    deploy:
+      placement:
+        constraints:
+        - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+networks:
+  redecor-net:
+    driver: overlay
+    attachable: true
+
+configs:
+  prometheus_config_v1:
+    external: true
+  grafana_datasource_v1:
+    external: true
+  grafana_provider_v1:
+    external: true
+  grafana_dashboard_v1:
+    external: true
